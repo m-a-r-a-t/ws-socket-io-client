@@ -78,7 +78,7 @@ func Connect(cfg *ClientConfig) *Client {
 	}
 
 	client.conn, _, err = websocket.Dial(context.TODO(), cfg.Url, nil)
-	go client.read()
+	go client.read() // TODO сделать провер
 	go client.eventWriter()
 	go client.reconnect()
 
@@ -101,6 +101,10 @@ func (c *Client) read() {
 		func() {
 			c.mu.RLock()
 			defer c.mu.RUnlock()
+			if c.conn == nil {
+				return
+			}
+
 			_, data, err := c.conn.Read(ctx)
 			if err != nil {
 				log.Println(err)
@@ -138,6 +142,9 @@ func (c *Client) eventWriter() {
 		func() {
 			c.mu.RLock()
 			defer c.mu.RUnlock()
+			if c.conn == nil {
+				return
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), c.config.WriteTimeout)
 			defer cancel()
