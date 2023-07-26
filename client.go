@@ -162,10 +162,9 @@ func (c *Client) eventWriter() {
 			defer cancel()
 
 			if err := c.conn.Write(ctx, websocket.MessageText, c.socketIO.MakeEventMsg(e.namespace, e.event, e.data)); err != nil {
-				c.mu.RUnlock()
 				log.Println(err)
 
-				signalConnDown(c.connDownCh)
+				go signalConnDown(c.connDownCh)
 
 				if c.config.EmitsRepeatOnError {
 					go func(e *WriteEvent) {
@@ -181,7 +180,8 @@ func (c *Client) eventWriter() {
 func (c *Client) ping(e *OpenEvent) {
 	var h HandshakeAnswer
 	if err := json.Unmarshal(e.data, &h); err != nil {
-		signalConnDown(c.connDownCh)
+		go signalConnDown(c.connDownCh)
+		return
 	}
 
 	pingInterval := time.Millisecond * time.Duration(h.PingInterval)
@@ -196,10 +196,9 @@ func (c *Client) ping(e *OpenEvent) {
 			defer cancel()
 
 			if err = c.conn.Write(ctx, websocket.MessageText, []byte("22")); err != nil {
-				c.mu.RUnlock()
 				log.Println(err)
 
-				signalConnDown(c.connDownCh)
+				go signalConnDown(c.connDownCh)
 			}
 
 			return err
@@ -279,7 +278,7 @@ func (c *Client) connectNamespace(namespace string) {
 	if err := c.conn.Write(ctx, websocket.MessageText, c.socketIO.MakeConnectMsg(namespace)); err != nil {
 		log.Println(err)
 
-		signalConnDown(c.connDownCh)
+		go signalConnDown(c.connDownCh)
 	}
 }
 
