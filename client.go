@@ -97,6 +97,14 @@ func Connect(cfg *ClientConfig) *Client {
 			time.Sleep(time.Millisecond * 100)
 		}
 
+		for _, v := range client.customNamespaces {
+			client.connectNamespace(v)
+		}
+
+		for k, _ := range client.handlers {
+			client.connectNamespace(k.namespace)
+		}
+
 		go client.read()
 		go client.eventWriter()
 	}()
@@ -275,12 +283,10 @@ func (c *Client) connectNamespace(namespace string) {
 
 func (c *Client) ConnectToCustomNamespace(namespace string) {
 	c.customNamespaces = append(c.customNamespaces, namespace)
-	c.connectNamespace(namespace)
 }
 
 func (c *Client) OnEvent(namespace, event string, f handler) {
 	c.handlers[handlerName{namespace, event}] = f
-	c.connectNamespace(namespace)
 }
 
 func (c *Client) runEvent(namespace, event string, data []byte) {
