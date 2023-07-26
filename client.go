@@ -101,10 +101,6 @@ func Connect(cfg *ClientConfig) *Client {
 			client.connectNamespace(v)
 		}
 
-		for k, _ := range client.handlers {
-			client.connectNamespace(k.namespace)
-		}
-
 		go client.read()
 		go client.eventWriter()
 	}()
@@ -253,10 +249,6 @@ func (c *Client) reconnect() {
 
 		for _, v := range c.customNamespaces {
 			c.connectNamespace(v)
-		}
-
-		for k, _ := range c.handlers {
-			c.connectNamespace(k.namespace)
 		}
 
 	}
