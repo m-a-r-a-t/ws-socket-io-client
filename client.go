@@ -3,6 +3,7 @@ package ws_client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"nhooyr.io/websocket"
 	"sync"
@@ -59,6 +60,7 @@ type Client struct {
 	conn             *websocket.Conn
 	config           *ClientConfig
 	connDownCh       chan struct{}
+	pingCh           chan struct{}
 	writeCh          chan *WriteEvent
 	mu               sync.RWMutex
 	customNamespaces []string
@@ -72,6 +74,7 @@ func Connect(cfg *ClientConfig) *Client {
 		handlers:   make(map[handlerName]handler, 100),
 		socketIO:   NewSocketIO(NewEngineIO()),
 		config:     cfg,
+		pingCh:     make(chan struct{}),
 		connDownCh: make(chan struct{}),
 		writeCh:    make(chan *WriteEvent, 1000),
 	}
@@ -94,7 +97,7 @@ func Connect(cfg *ClientConfig) *Client {
 			if client.conn != nil {
 				break
 			}
-			time.Sleep(time.Millisecond * 100)
+			time.Sleep(time.Millisecond * 500)
 		}
 
 		for _, v := range client.customNamespaces {
@@ -135,7 +138,7 @@ func (c *Client) read() {
 				case *Event:
 					c.runEvent(s.namespace, s.event, s.data)
 				case *OpenEvent:
-					go c.ping(s)
+					go c.ping(s, c.pingCh)
 				}
 
 				if err != nil {
@@ -173,40 +176,44 @@ func (c *Client) eventWriter() {
 	}
 }
 
-func (c *Client) ping(e *OpenEvent) {
+func (c *Client) ping(e *OpenEvent, closeCh chan struct{}) {
 	var h HandshakeAnswer
 	if err := json.Unmarshal(e.data, &h); err != nil {
-		go signalConnDown(c.connDownCh)
-		return
+		log.Fatal(err)
 	}
 
 	pingInterval := time.Millisecond * time.Duration(h.PingInterval)
 
 	for {
 		err := func() error {
-			var err error
 			c.mu.RLock()
 			defer c.mu.RUnlock()
 
-			ctx, cancel := context.WithTimeout(context.Background(), c.config.WriteTimeout)
-			defer cancel()
+			select {
+			case <-closeCh:
+				close(closeCh)
+				return errors.New("this ping need be closed")
+			default:
+				ctx, cancel := context.WithTimeout(context.Background(), c.config.WriteTimeout)
+				defer cancel()
 
-			if err = c.conn.Write(ctx, websocket.MessageText, []byte("22")); err != nil {
-				log.Println(err)
+				if err := c.conn.Write(ctx, websocket.MessageText, []byte("22")); err != nil {
+					log.Println(err)
 
-				go signalConnDown(c.connDownCh)
+					go signalConnDown(c.connDownCh)
+				}
 			}
 
-			return err
+			return nil
 		}()
 
 		if err != nil {
-			return
+			log.Println("CLOSE PING", err)
+			break
 		}
 
 		time.Sleep(pingInterval)
 	}
-
 }
 
 func signalConnDown(downCh chan struct{}) {
@@ -233,6 +240,12 @@ func (c *Client) reconnect() {
 		c.mu.Lock()
 		close(c.connDownCh)
 		c.connDownCh = make(chan struct{})
+
+		go func(pingCh chan struct{}) {
+			pingCh <- struct{}{}
+		}(c.pingCh)
+
+		c.pingCh = make(chan struct{})
 
 		func() {
 			defer c.mu.Unlock()
