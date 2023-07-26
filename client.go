@@ -24,23 +24,23 @@ func initConfig(cfg *ClientConfig) {
 
 func getBaseConfig() *ClientConfig {
 	return &ClientConfig{
-		AutoReconnect:      true,
-		WriteTimeout:       time.Second * 5,
-		EmitsRepeatOnError: false,
+		AutoReconnect: true,
+		WriteTimeout:  time.Second * 5,
+		//EmitsRepeatOnError: false,
 	}
 }
 
 type socketIO interface {
 	ReadSocketIOMessage(bytes []byte) (interface{}, error)
-	MakeEventMsg(namespace, event string, data interface{}) []byte
+	MakeEventMsg(namespace, event string, data []byte) []byte
 	MakeConnectMsg(namespace string) []byte
 }
 
 type ClientConfig struct {
-	Url                string
-	AutoReconnect      bool
-	WriteTimeout       time.Duration
-	EmitsRepeatOnError bool
+	Url           string
+	AutoReconnect bool
+	WriteTimeout  time.Duration
+	//EmitsRepeatOnError bool
 }
 
 type handlerName struct {
@@ -51,7 +51,7 @@ type handler func(msg []byte)
 
 type WriteEvent struct {
 	namespace, event string
-	data             interface{}
+	data             []byte
 }
 
 type Client struct {
@@ -165,11 +165,11 @@ func (c *Client) eventWriter() {
 
 				go signalConnDown(c.connDownCh)
 
-				if c.config.EmitsRepeatOnError {
-					go func(e *WriteEvent) {
-						c.writeCh <- e
-					}(e)
-				}
+				//if c.config.EmitsRepeatOnError { // не работает
+				//	go func(e *WriteEvent) {
+				//		c.writeCh <- e
+				//	}(e)
+				//}
 
 			}
 		}()
@@ -267,7 +267,7 @@ func (c *Client) reconnect() {
 	}
 }
 
-func (c *Client) Emit(namespace, event string, data interface{}) {
+func (c *Client) Emit(namespace, event string, data []byte) {
 	go func() {
 		c.writeCh <- &WriteEvent{namespace, event, data}
 	}()

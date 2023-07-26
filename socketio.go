@@ -1,7 +1,6 @@
 package ws_client
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -71,8 +70,8 @@ func newMsg(bufSize int) *Msg {
 	}
 }
 
-func (s *SocketIO) MakeEventMsg(namespace, event string, data interface{}) []byte {
-	msg := newMsg(1000)
+func (s *SocketIO) MakeEventMsg(namespace, event string, data []byte) []byte {
+	msg := newMsg(len(data) + 100)
 
 	s.engineIO.AddPacketType(msg, MessagePacket)
 	s.addPacketType(msg, EventPacket)
@@ -85,12 +84,14 @@ func (s *SocketIO) MakeEventMsg(namespace, event string, data interface{}) []byt
 
 	msg.Add([]byte(fmt.Sprintf(`"%s",`, event)))
 
-	bytes, err := json.Marshal(data)
-	if err != nil {
-		panic(err)
-	}
+	msg.Add(data)
 
-	msg.Add(bytes)
+	//bytes, err := json.Marshal(data) // if data is `interface{}` type
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//msg.Add(bytes)
 
 	msg.Add([]byte("]"))
 
