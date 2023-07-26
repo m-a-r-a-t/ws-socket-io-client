@@ -40,7 +40,7 @@ func main() {
 
 	for {
 		go c.Emit("/", "notice", "hello")
-		time.Sleep(time.Second * 10)
+		time.Sleep(time.Second * 3)
 	}
 
 	time.Sleep(time.Hour * 1)

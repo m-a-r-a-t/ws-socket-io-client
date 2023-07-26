@@ -3,7 +3,6 @@ package ws_client
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"nhooyr.io/websocket"
 	"sync"
@@ -78,9 +77,6 @@ func Connect(cfg *ClientConfig) *Client {
 	}
 
 	client.conn, _, err = websocket.Dial(context.TODO(), cfg.Url, nil)
-	go client.read() // TODO сделать провер
-	go client.eventWriter()
-	go client.reconnect()
 
 	if err != nil {
 		if !cfg.AutoReconnect {
@@ -90,6 +86,20 @@ func Connect(cfg *ClientConfig) *Client {
 			go signalConnDown(client.connDownCh)
 		}
 	}
+
+	go func() {
+		go client.reconnect()
+
+		for {
+			if client.conn != nil {
+				break
+			}
+			time.Sleep(time.Millisecond * 100)
+		}
+
+		go client.read()
+		go client.eventWriter()
+	}()
 
 	return &client
 }
@@ -101,9 +111,6 @@ func (c *Client) read() {
 		func() {
 			c.mu.RLock()
 			defer c.mu.RUnlock()
-			if c.conn == nil {
-				return
-			}
 
 			_, data, err := c.conn.Read(ctx)
 			if err != nil {
@@ -142,9 +149,6 @@ func (c *Client) eventWriter() {
 		func() {
 			c.mu.RLock()
 			defer c.mu.RUnlock()
-			if c.conn == nil {
-				return
-			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), c.config.WriteTimeout)
 			defer cancel()
@@ -156,7 +160,6 @@ func (c *Client) eventWriter() {
 				signalConnDown(c.connDownCh)
 
 				if c.config.EmitsRepeatOnError {
-					fmt.Println("repeat")
 					go func(e *WriteEvent) {
 						c.writeCh <- e
 					}(e)
@@ -267,7 +270,6 @@ func (c *Client) connectNamespace(namespace string) {
 		log.Println(err)
 
 		signalConnDown(c.connDownCh)
-		go c.connectNamespace(namespace)
 	}
 }
 
