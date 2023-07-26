@@ -264,7 +264,9 @@ func (c *Client) reconnect() {
 }
 
 func (c *Client) Emit(namespace, event string, data interface{}) {
-	c.writeCh <- &WriteEvent{namespace, event, data}
+	go func() {
+		c.writeCh <- &WriteEvent{namespace, event, data}
+	}()
 }
 
 func (c *Client) connectNamespace(namespace string) {
