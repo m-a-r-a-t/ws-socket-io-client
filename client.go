@@ -71,10 +71,8 @@ type Client struct {
 	customNamespaces []string
 }
 
-func Connect(cfg *ClientConfig) *Client {
-	var err error
+func NewClient(cfg *ClientConfig) *Client {
 	initConfig(cfg)
-
 	client := Client{
 		handlers:   make(map[handlerName]handler, 100),
 		socketIO:   NewSocketIO(NewEngineIO()),
@@ -83,37 +81,42 @@ func Connect(cfg *ClientConfig) *Client {
 		connDownCh: make(chan struct{}),
 		writeCh:    make(chan *WriteEvent, 1000),
 	}
+	return &client
+}
 
-	client.conn, _, err = websocket.Dial(context.TODO(), cfg.Url, nil)
+func (c *Client) Connect() *Client {
+	var err error
+
+	c.conn, _, err = websocket.Dial(context.TODO(), c.config.Url, nil)
 
 	if err != nil {
-		if !cfg.AutoReconnect {
+		if !c.config.AutoReconnect {
 			log.Fatal(err)
 		} else {
 			log.Println(err)
-			go signalConnDown(client.connDownCh)
+			go signalConnDown(c.connDownCh)
 		}
 	}
 
 	go func() {
-		go client.reconnect()
+		go c.reconnect()
 
 		for {
-			if client.conn != nil {
+			if c.conn != nil {
 				break
 			}
 			time.Sleep(time.Millisecond * 500)
 		}
 
-		for _, v := range client.customNamespaces {
-			client.connectNamespace(v)
+		for _, v := range c.customNamespaces {
+			c.connectNamespace(v)
 		}
 
-		go client.read()
-		go client.eventWriter()
+		go c.read()
+		go c.eventWriter()
 	}()
 
-	return &client
+	return c
 }
 
 func (c *Client) read() {
