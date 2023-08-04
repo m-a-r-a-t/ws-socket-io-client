@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	ConnectEvent    = "$connect"
+	DisConnectEvent = "$disconnect"
+)
+
 func initConfig(cfg *ClientConfig) {
 	if cfg == nil {
 		cfg = getBaseConfig()
@@ -139,6 +144,7 @@ func (c *Client) read() {
 					c.runEvent(s.namespace, s.event, s.data)
 				case *OpenEvent:
 					go c.ping(s, c.pingCh)
+					c.runEvent("/", ConnectEvent, s.data)
 				}
 
 				if err != nil {
@@ -245,6 +251,8 @@ func (c *Client) reconnect() {
 			pingCh <- struct{}{}
 		}(c.pingCh)
 
+		go c.runEvent("/", DisConnectEvent, nil)
+
 		c.pingCh = make(chan struct{})
 
 		func() {
@@ -295,6 +303,14 @@ func (c *Client) OnEvent(namespace, event string, f handler) {
 	c.handlers[handlerName{namespace, event}] = f
 }
 
+func (c *Client) OnConnect(f handler) {
+	c.handlers[handlerName{"/", ConnectEvent}] = f
+}
+
+func (c *Client) OnDisconnect(f handler) {
+	c.handlers[handlerName{"/", DisConnectEvent}] = f
+}
+
 func (c *Client) runEvent(namespace, event string, data []byte) {
 	if namespace == "" {
 		namespace = "/"
@@ -308,15 +324,6 @@ func (c *Client) runEvent(namespace, event string, data []byte) {
 
 }
 
-// TODO
-//func (c *Client) OnConnect(namespace string, data interface{}) {
-//
-//}
-
 //func (c *Client) OnError(namespace string, data interface{}) {
-//
-//}
-
-//func (c *Client) OnDisconnect(namespace string, data interface{}) {
 //
 //}
