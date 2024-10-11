@@ -3,6 +3,7 @@ package ws_client
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -70,17 +71,22 @@ func newMsg(bufSize int) *Msg {
 	}
 }
 
-func (s *SocketIO) MakeEventMsg(namespace, event string, data []byte) []byte {
+func (s *SocketIO) MakeEventMsg(namespace, event string, data []byte, ackId *int) []byte {
 	msg := newMsg(len(data) + 100)
 
 	s.engineIO.AddPacketType(msg, MessagePacket)
 	s.addPacketType(msg, EventPacket)
 
 	if namespace != "/" {
-		msg.Add([]byte(fmt.Sprintf("%s,[", namespace)))
-	} else {
-		msg.Add([]byte("["))
+		msg.Add([]byte(fmt.Sprintf("%s,", namespace)))
 	}
+	// 4215[hello,{name: 'world'}] 15 is id
+
+	if ackId != nil {
+		msg.Add([]byte(strconv.Itoa(*ackId)))
+	}
+
+	msg.Add([]byte("["))
 
 	msg.Add([]byte(fmt.Sprintf(`"%s",`, event)))
 
@@ -112,7 +118,6 @@ func (s *SocketIO) MakeConnectMsg(namespace string) []byte {
 }
 
 func (s *SocketIO) ReadSocketIOMessage(bytes []byte) (interface{}, error) {
-
 	engineIOPacket, err := s.engineIO.ReadPacketType(bytes[0])
 	if err != nil {
 		return nil, err
@@ -126,19 +131,24 @@ func (s *SocketIO) ReadSocketIOMessage(bytes []byte) (interface{}, error) {
 	switch engineIOPacket {
 	case OpenPacket:
 		return &OpenEvent{data: bytes[1:]}, nil
-
+	case PongPacket:
+		// skip
+		return nil, nil
 	case MessagePacket:
-
-		if socketIOPacket == EventPacket { // TODO обработать все отстальные пакеты socket io
+		switch socketIOPacket {
+		case ConnectPacket:
+			//skip
+			return nil, nil
+		case EventPacket:
 			return s.readMessageEvent(bytes[2:])
+		case AckPacket:
+			return s.readMessageAck(bytes[2:])
+		default:
+			return nil, fmt.Errorf("invalid socketIO Packet: %s", socketIOPacket)
 		}
-
-		return nil, err
 	default:
-		return nil, err
+		return nil, fmt.Errorf("invalid engineIO Packet: %s", engineIOPacket)
 	}
-
-	return nil, err
 }
 
 type Event struct {
@@ -148,6 +158,35 @@ type Event struct {
 
 type OpenEvent struct {
 	data []byte
+}
+
+type Ack struct {
+	Id        int
+	Namespace string
+	Data      []byte
+}
+
+func (s *SocketIO) readMessageAck(bytes []byte) (*Ack, error) {
+	namespace, l, err := s.getNamespace(bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	ackId, l, err := s.getAckId(bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := s.getData(bytes[l:])
+	if err != nil {
+		return nil, err
+	}
+
+	return &Ack{
+		ackId,
+		namespace,
+		data,
+	}, nil
 }
 
 func (s *SocketIO) readMessageEvent(bytes []byte) (*Event, error) {
@@ -196,6 +235,30 @@ func (s *SocketIO) getNamespace(bytes []byte) (string, int, error) {
 	}
 	// + 1 так как еще ','
 	return b.String(), len([]rune(b.String())) + 1, nil
+}
+
+func (s *SocketIO) getAckId(bytes []byte) (id int, n int, err error) {
+	var b strings.Builder
+
+	if len(bytes) == 0 {
+		return 0, 0, errors.New("cannot parse data")
+	}
+
+	for i := range bytes {
+		if bytes[i] == '[' {
+			break
+		}
+
+		b.WriteByte(bytes[i])
+	}
+
+	v, err := strconv.ParseInt(b.String(), 10, 64)
+	if err != nil {
+		return 0, 0, errors.New("can not parse id from string")
+	}
+
+	// +4 так как учитываем ["",
+	return int(v), len([]rune(b.String())) + 1, nil
 }
 
 func (s *SocketIO) getEvent(bytes []byte) (string, int, error) {

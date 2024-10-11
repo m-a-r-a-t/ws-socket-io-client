@@ -1,58 +1,57 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	ws_client "github.com/m-a-r-a-t/ws-socket-io-client"
+	"log"
+	"log/slog"
 	"time"
 )
 
 func main() {
+	slog.SetLogLoggerLevel(slog.LevelInfo)
+
 	cfg := ws_client.ClientConfig{
-		Url:           "ws://localhost:8000/socket.io/?EIO=3&transport=websocket",
+		Url:           "ws://localhost:8999/socket.io/?EIO=3&transport=websocket",
 		AutoReconnect: true,
 		WriteTimeout:  time.Second * 10,
-		//EmitsRepeatOnError: false,
 	}
 
-	c := ws_client.Connect(&cfg)
+	c, err := ws_client.NewClient(&cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	//c.OnEvent("/", "reply", func(msg []byte) {
-	//	fmt.Println("reply:", string(msg))
-	//})
-	//
-	//c.OnEvent("/", "h1", func(msg []byte) {
-	//	var arr []int
-	//	json.Unmarshal(msg, &arr)
-	//	fmt.Println("h1:", arr)
-	//})
-	//
-	//c.OnEvent("/", "h2", func(msg []byte) {
-	//	var m = map[string]string{}
-	//	json.Unmarshal(msg, &m)
-	//	fmt.Println("h2:", m)
-	//})
-
-	//c.ConnectToCustomNamespace("/chat")
-
-	//c.Emit("/chat", "msg", "hello")
-	//c.Emit("/", "notice", "hello")
-	bytes, _ := json.Marshal(map[string]interface{}{
-		"id": "fdsfds",
+	c.OnConnect(func(msg []byte) {
+		slog.Info("CONNECT", slog.Any("msg", msg))
 	})
-	fmt.Println(bytes, string(bytes))
 
-	b, _ := json.Marshal(string(bytes))
+	c.OnEvent("/", "counter", func(msg []byte) {
+		var r Resp
+		json.Unmarshal(msg, &r)
 
-	fmt.Println(b, string(b))
+		fmt.Println(r.Counter)
+	})
 
-	fmt.Println("'" + string(bytes) + "'")
+	bytes, _ := json.Marshal("hello world")
+	//b, _ := json.Marshal(string(bytes))
+
+	ctx := context.Background()
 
 	for {
-		go c.Emit("/", "notice", b)
-		time.Sleep(time.Second * 3)
+		err := c.Emit(ctx, "/", "hello", bytes)
+		if err != nil {
+			slog.Error("can not emit msg", slog.Any("err", err))
+		}
+
+		time.Sleep(time.Second)
 	}
 
 	time.Sleep(time.Hour * 1)
+}
 
+type Resp struct {
+	Counter int `json:"counter"`
 }
