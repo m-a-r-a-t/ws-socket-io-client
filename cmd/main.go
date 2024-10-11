@@ -40,6 +40,11 @@ func main() {
 
 	ctx := context.Background()
 
+	err = c.Connect()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	for {
 		err := c.Emit(ctx, "/", "hello", bytes)
 		if err != nil {

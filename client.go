@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"nhooyr.io/websocket"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -126,6 +127,7 @@ type WriteEvent struct {
 }
 
 type Client struct {
+	started          atomic.Bool
 	ackSubscriptions ackSubscriptions
 	handlers         map[handlerName]*handler
 	socketIO         socketIO
@@ -164,14 +166,24 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 		writeCh:    make(chan *WriteEvent, 1000),
 	}
 
+	return c, nil
+}
+
+func (c *Client) Connect() error {
+	if c.started.Load() == true {
+		return errors.New("client started, create new client")
+	}
+
 	conn, err := c.connect()
-	if err != nil && !cfg.ConnectForce {
+	if err != nil && !c.config.ConnectForce {
 		_ = c.Close()
 
-		return nil, errors.Wrap(err, "can not connect to server")
+		return errors.Wrap(err, "can not connect to server")
 	}
 
 	c.conn = conn
+
+	c.started.Swap(true)
 
 	go func() {
 		for range c.shutdownCh {
@@ -179,9 +191,9 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 		}
 	}()
 
-	for _, v := range c.customNamespaces {
-		c.connectNamespace(v)
-	}
+	//for _, v := range c.customNamespaces {
+	//	c.connectNamespace(v)
+	//}
 
 	go func() {
 		for {
@@ -213,7 +225,7 @@ func NewClient(cfg *ClientConfig) (*Client, error) {
 		}
 	}()
 
-	return c, nil
+	return nil
 }
 
 func (c *Client) connect() (*websocket.Conn, error) {
