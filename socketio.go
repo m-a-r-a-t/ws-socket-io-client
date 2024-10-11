@@ -291,8 +291,11 @@ func (s *SocketIO) getData(bytes []byte) ([]byte, error) {
 		return nil, errors.New("cannot parse data")
 	}
 
-	if getBracketPair(bytes[0]) != bytes[len(bytes)-3] {
-		return nil, errors.New("cannot parse data")
+	switch bytes[0] {
+	case '"', '[', '{':
+		if getBracketPair(bytes[0]) != bytes[len(bytes)-3] {
+			return nil, errors.New("cannot parse data")
+		}
 	}
 
 	return bytes[:len(bytes)-2], nil
