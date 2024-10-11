@@ -182,8 +182,6 @@ func (c *Client) Connect() error {
 
 	conn, err := c.connect()
 	if err != nil && !c.config.ConnectForce {
-		_ = c.Close()
-
 		return errors.Wrap(err, "can not connect to server")
 	}
 
