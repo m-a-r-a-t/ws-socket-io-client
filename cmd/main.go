@@ -28,7 +28,7 @@ func main() {
 		slog.Info("CONNECT", slog.Any("msg", msg))
 	})
 
-	c.OnEvent("/", "counter", func(msg []byte) {
+	c.OnEventSync("/", "counter", func(msg []byte) {
 		var r Resp
 		json.Unmarshal(msg, &r)
 
@@ -46,16 +46,16 @@ func main() {
 	}
 
 	for {
-		data, err := c.EmitWithAck(ctx, "/", "hello", bytes)
+		_, err := c.EmitWithAck(ctx, "/", "hello", bytes)
 		if err != nil {
 			slog.Error("can not emit msg", slog.Any("err", err))
 		}
 
-		time.Sleep(time.Second)
+		//time.Sleep(time.Second)
 
 		//json.Unmarshal()
 
-		fmt.Println(string(data))
+		//fmt.Println(string(data))
 	}
 
 	time.Sleep(time.Hour * 1)

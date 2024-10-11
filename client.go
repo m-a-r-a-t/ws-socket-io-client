@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"nhooyr.io/websocket"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,9 +65,14 @@ type handlerName struct {
 type handlerFunc func(msg []byte)
 
 type handler struct {
-	isSync          bool
-	f               handlerFunc
-	singleSemaphore chan struct{}
+	isSync     bool
+	f          handlerFunc
+	eventQueue eventQueue
+}
+
+type eventQueue struct {
+	ownerTicket    atomic.Int64
+	nextFreeTicket atomic.Int64
 }
 
 type ackSubscriptions struct {
@@ -305,10 +311,29 @@ func (c *Client) read() error {
 			c.ackSubscriptions.Remove(s.Id)
 		}
 	case *Event:
-		c.runHandler(s.namespace, s.event, s.data)
+		namespace := s.namespace
+		if namespace == "" {
+			namespace = "/"
+		}
+
+		h, ok := c.handlers[handlerName{namespace, s.event}]
+		if !ok {
+			return errors.Errorf("not listen handler for event %s ; namespace %s", s.event, s.namespace)
+		}
+
+		ticket := h.eventQueue.nextFreeTicket.Add(1)
+
+		go c.runHandler(namespace, s.event, s.data, ticket)
 	case *OpenEvent:
+		h, ok := c.handlers[handlerName{"/", ConnectEvent}]
+		if !ok {
+			return errors.Errorf("not listen handler for event %s", ConnectEvent)
+		}
+		// todo: где не нужен синхронный режим убрать тикеты.
+		ticket := h.eventQueue.nextFreeTicket.Add(1)
+
 		go c.startPinger(s)
-		c.runHandler("/", ConnectEvent, s.data)
+		go c.runHandler("/", ConnectEvent, s.data, ticket)
 	}
 
 	return nil
@@ -592,25 +617,22 @@ func (c *Client) OnEvent(namespace, event string, f handlerFunc) {
 
 func (c *Client) OnEventSync(namespace, event string, f handlerFunc) {
 	c.handlers[handlerName{namespace, event}] = &handler{
-		isSync:          true,
-		f:               f,
-		singleSemaphore: make(chan struct{}, 1),
+		isSync: true,
+		f:      f,
 	}
 }
 
 func (c *Client) OnConnect(f handlerFunc) {
 	c.handlers[handlerName{"/", ConnectEvent}] = &handler{
-		isSync:          true,
-		f:               f,
-		singleSemaphore: make(chan struct{}, 1),
+		isSync: true,
+		f:      f,
 	}
 }
 
 func (c *Client) OnDisconnect(f handlerFunc) {
 	c.handlers[handlerName{"/", DisConnectEvent}] = &handler{
-		isSync:          true,
-		f:               f,
-		singleSemaphore: make(chan struct{}, 1),
+		isSync: true,
+		f:      f,
 	}
 }
 
@@ -618,7 +640,7 @@ func (c *Client) OnDisconnect(f handlerFunc) {
 //
 //}
 
-func (c *Client) runHandler(namespace, event string, data []byte) {
+func (c *Client) runHandler(namespace, event string, data []byte, ticket int64) {
 	if namespace == "" {
 		namespace = "/"
 	}
@@ -635,16 +657,12 @@ func (c *Client) runHandler(namespace, event string, data []byte) {
 	}
 
 	if h.isSync {
-		h.singleSemaphore <- struct{}{}
+		for h.eventQueue.ownerTicket.Load() != ticket-1 {
+			runtime.Gosched()
+		}
 	}
 
-	go func() {
-		if h.isSync {
-			defer func() {
-				<-h.singleSemaphore
-			}()
-		}
+	h.f(data)
 
-		h.f(data)
-	}()
+	h.eventQueue.ownerTicket.Add(1)
 }
