@@ -285,6 +285,12 @@ func (c *Client) read() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	if c.conn == nil {
+		c.signalShutDown()
+
+		return ErrConnectionNotAvailable
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
